@@ -5,6 +5,8 @@ use warnings;
 use threads;
 use threads::shared;
 
+use experimental 'smartmatch';
+
 use LWP::Simple;
 use LWP::Protocol::https;
 use Mojo::DOM;
@@ -21,18 +23,39 @@ $|++;
 
 my $URL :shared;
 $URL = 'https://wiki.dolphin-emu.org';
-my @game_urls;
+my $EMBED_CSS;
+my $FORCE;
 
-my @cats = (
-  # '4 (Players supported)',
-  '2 (Players supported)',
-  'GameCube Controller (Input supported)',
-  'Co-op (Game mode)',
+my %ALIAS = (
+  '2p' => "2 (Players supported)",
+  '4p' => "4 (Players supported)",
+  gcc  => "GameCube Controller (Input supported)",
+  coop => "Co-op (Game mode)",
 );
+
+my @cats;
+for (@ARGV) {
+  if      ($_ ~~ [qw{--embed-css -c}])  { $EMBED_CSS = 1 }
+  elsif ($_ ~~ [qw{--force -f}])        { $FORCE = 1 }
+  else { push @cats, $ALIAS{$_} // $_; }
+}
+@cats = sort @cats;
+
+sub short ($) {
+  my $str = shift;
+  my ($match) = grep {$ALIAS{$_} eq $str} keys %ALIAS;
+  return $match // $str;
+}
 
 sub underscore ($) {$_[0] =~ s/\s/_/gr}
 
-my $filename = join('_', map {underscore s/ \(.*$//r} @cats) . '.html';
+my $FILENAME =
+  join('_', map { underscore short($_) =~ s/ \(.*$//r } @cats) . '.html';
+
+if (!$FORCE && -f $FILENAME) {
+  print STDERR qq{File "$FILENAME" exists. Continue anyway? [Y/n] };
+  exit if <STDIN> eq "n\n";
+}
 
 sub to_spans ($) {"<span>$_[0]</span" =~ s|, |</span><span>|gr}
 
@@ -144,9 +167,9 @@ for (
   $tr->td('', 'class="title"')->a($title, qq{href="$url"});
 }
 
-open my $fh, '>', $filename;
+open my $fh, '>', $FILENAME;
 binmode $fh, ":utf8";
 print $fh $html->get_html_text(0, 1);
 close $fh;
 
-print "Saved to $filename\n";
+print "Saved to $FILENAME\n";
