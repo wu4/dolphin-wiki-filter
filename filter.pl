@@ -4,15 +4,19 @@ use warnings;
 
 use threads;
 use threads::shared;
+
 use LWP::Simple;
 use LWP::Protocol::https;
 use Mojo::DOM;
-use experimental 'smartmatch';
+
 use List::Compare;
+
 use HTML::TagTree;
+
 use utf8;
 binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
+
 $|++;
 
 my $URL :shared;
@@ -25,11 +29,12 @@ my @cats = (
   'GameCube Controller (Input supported)',
   'Co-op (Game mode)',
 );
+
 sub underscore ($) {$_[0] =~ s/\s/_/gr}
 
 my $filename = join('_', map {underscore s/ \(.*$//r} @cats) . '.html';
 
-sub linebreak (_) {"<span>$_[0]</span" =~ s|, |</span><span>|gr}
+sub to_spans ($) {"<span>$_[0]</span" =~ s|, |</span><span>|gr}
 
 sub intersection (@) { List::Compare->new(@_)->get_intersection }
 
@@ -47,7 +52,6 @@ sub eat_arr (&@) {
                    . (++$finished_count)
                    . '/'
                    . $arr_size;
-        #&$join_code($_->join)
       }
     }
     while (threads->list < 8) {
@@ -63,7 +67,10 @@ my $html = HTML::TagTree->new('html');
 my $head = $html->head;
 my $body = $html->body;
 $head->meta('', 'charset="utf8"');
-$head->script('', 'type="text/javascript" src="https://kryogenix.org/code/browser/sorttable/sorttable.js"');
+$head->script('', join(' ',qw{
+    type="text/javascript"
+    src="https://kryogenix.org/code/browser/sorttable/sorttable.js"
+}));
 
 if (defined($ARGV[0]) && $ARGV[0] eq '--embed-css') {
   open my $fh, '<', 'games.css';
@@ -97,10 +104,10 @@ for (
 
       my $t = $type->at('a')->text;
 
-      if    ($t eq 'Platform(s)')   {$platform = linebreak $values->all_text}
-      elsif ($t eq 'Genre(s)')      {$genres   = linebreak $values->all_text}
-      elsif ($t eq 'Mode(s)')       {$modes    = linebreak $values->all_text}
-      elsif ($t eq 'Input methods') {$inputs   = linebreak $values->all_text}
+      if    ($t eq 'Platform(s)')   {$platform = to_spans $values->all_text}
+      elsif ($t eq 'Genre(s)')      {$genres   = to_spans $values->all_text}
+      elsif ($t eq 'Mode(s)')       {$modes    = to_spans $values->all_text}
+      elsif ($t eq 'Input methods') {$inputs   = to_spans $values->all_text}
     }
 
     return $title, $platform, $modes, $genres, $inputs, $url;
@@ -130,7 +137,10 @@ for (
 ) {
   my ($title, $platform, $modes, $genres, $inputs, $url) = @$_;
   my $tr = $tbody->tr;
-  eval '$tr->td($' . $_ . qq{,'class="$_"')} for qw{platform modes genres inputs};
+  $tr->td($platform, 'class="platform"');
+  $tr->td($modes,    'class="modes"');
+  $tr->td($genres,   'class="genres"');
+  $tr->td($inputs,   'class="inputs"');
   $tr->td('', 'class="title"')->a($title, qq{href="$url"});
 }
 
