@@ -128,23 +128,37 @@ eat_arr {
 }, @cats_depag_arr;
 
 print <<~"eoh";
-  <html>
-    <head>
-      <meta charset="utf8" />
-      <script type="text/javascript" src="https://kryogenix.org/code/browser/sorttable/sorttable.js"></script>
-      <link rel="stylesheet" type="text/css" href="games.css" />
-    </head>
-    <table class="sortable">
-      <thead>
-        <tr>
-          <th>Platform</th>
-          <th>Mode(s)</th>
-          <th>Genre(s)</th>
-          <th>Input methods</th>
-          <th>Game</th>
-        </tr>
-      </thead>
-      <tbody>
+<html><head>
+  <meta charset="utf8">
+  <script
+    type="text/javascript"
+    src="https://kryogenix.org/code/browser/sorttable/sorttable.js"></script>
+eoh
+
+if ($ARGV[0] eq '--embed-css') {
+  print qq{<style type="text/css">};
+  open my $fh, '<', 'games.css';
+  chomp(my @lines = <$fh>);
+  print join("\n", @lines);
+  close $fh;
+  print qq{</style>};
+} else {
+  print qq{<link rel="stylesheet" type="text/css" href="games.css" />};
+}
+
+print <<~"eoh";
+  </head>
+  <table class="sortable">
+    <thead>
+      <tr>
+        <th>Platform</th>
+        <th>Mode(s)</th>
+        <th>Genre(s)</th>
+        <th>Input methods</th>
+        <th>Game</th>
+      </tr>
+    </thead>
+    <tbody>
 eoh
 print join('', map {$_->[1]} sort {$a->[0] cmp $b->[0]} @games) . "\n";
 print "</tbody></table></html>\n";
