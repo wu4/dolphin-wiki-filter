@@ -8,6 +8,7 @@ use LWP::Simple;
 use LWP::Protocol::https;
 use Mojo::DOM;
 use experimental 'smartmatch';
+use List::Compare;
 use utf8;
 binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
@@ -22,63 +23,61 @@ my @cats = (
   'GameCube Controller (Input supported)',
   # 'Co-op (Game mode)',
 );
-sub underscore (_) {s/\s/_/gr}
+sub underscore ($) {$_[0] =~ s/\s/_/gr}
 
-sub eat_arr (&&\@) {
-  my ($thread_code, $join_code, $arr) = @_;
+sub linebreak (_) {"<span>$_[0]</span" =~ s|, |</span><span>|gr}
+
+sub eat_arr (&\@\@) {
+  my ($thread_code, $arr, $ret) = @_;
+  my $arr_size = scalar @$arr;
+  my $finished_count = 0;
   do {
     for (threads->list) {
-      &$join_code($_->join) if $_->is_joinable
+      if ($_->is_joinable) {
+        push @$ret, [$_->join];
+        print STDERR "\r\e[2K"
+                   . (++$finished_count)
+                   . '/'
+                   . $arr_size;
+        #&$join_code($_->join)
+      }
     }
     while (threads->list < 8) {
       last unless @$arr;
       threads->create({'context' => 'list'}, $thread_code, pop @$arr);
     }
   } while (threads->list);
+  print STDERR "\n";
 }
 
-sub linebreak (_) {
-  "<span>$_[0]</span" =~ s|, |</span><span>|gr
-}
+my @cats_depag = do {
+  eat_arr {
+    my $cat = shift;
+    my $nextpage = "$URL/index.php?title=Category:" . underscore $cat;
 
-my %cats_depag;
-eat_arr {
-  local $_ = shift;
-  my $nextpage = "$URL/index.php?title=Category:" . underscore;
-  print STDERR "BEGIN $_\n";
+    my @pages;
+    while (defined $nextpage) {
+      my $content = Mojo::DOM->new(get $nextpage)->at('#mw-pages');
 
-  my @pages;
-  while (defined $nextpage) {
-    my $content = Mojo::DOM->new(get $nextpage)->at('#mw-pages');
+      for ($content->find('.mw-category a')->each) {
+        push @pages, $_->attr->{href};
+      }
 
-    for ($content->find('.mw-category a')->each) {
-      push @pages, $_->attr->{href};
-    }
-
-    $nextpage = undef;
-    for ($content->find('a')->each) {
-      if ($_->text eq 'next page') {
-        $nextpage = $URL . $_->attr->{href};
-        last;
+      $nextpage = undef;
+      for ($content->find('a')->each) {
+        if ($_->text eq 'next page') {
+          $nextpage = $URL . $_->attr->{href};
+          last;
+        }
       }
     }
-  }
-  print STDERR " END  $_\n";
 
-  return $_, @pages;
-} sub {
-  my ($cat, @pages) = @_;
-  $cats_depag{$cat} = \@pages;
-}, @cats;
+    return @pages;
+  } @cats, my @ret;
 
-my @cats_depag_arr = do {
-  my %seen;
-  $seen{$_}++ for map @$_, values %cats_depag;
-  grep {$seen{$_} == keys %cats_depag} keys %seen;
+  List::Compare->new(@ret)->get_intersection;
 };
 
-my $gamenum = scalar @cats_depag_arr;
-my @games;
 eat_arr {
   my $url = $URL . shift;
   my $dom = Mojo::DOM->new(get $url);
@@ -108,13 +107,7 @@ eat_arr {
       <td class="title"><a href="$url">$title</a></td>
     </tr>
   eoc
-} sub {
-  print STDERR "\r\e[2K"
-             . ($gamenum - scalar @cats_depag_arr)
-             . '/'
-             . $gamenum;
-  push @games, [@_];
-}, @cats_depag_arr;
+} @cats_depag, my @games;
 
 print <<~"eoh";
 <html><head>
@@ -124,7 +117,7 @@ print <<~"eoh";
     src="https://kryogenix.org/code/browser/sorttable/sorttable.js"></script>
 eoh
 
-if ($ARGV[0] eq '--embed-css') {
+if (defined($ARGV[0]) && $ARGV[0] eq '--embed-css') {
   print qq{<style type="text/css">};
   open my $fh, '<', 'games.css';
   chomp(my @lines = <$fh>);
