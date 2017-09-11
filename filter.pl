@@ -41,17 +41,6 @@ sub linebreak (_) {
   "<span>$_[0]</span" =~ s|, |</span><span>|gr
 }
 
-sub children_exist ($@) {
-  my $elem = shift;
-  my @methods = @_;
-  return '' unless defined $elem;
-  for (@methods) {
-    my $elem = eval('$elem->' . $_);
-    return '' unless defined $elem;
-  }
-  return $elem;
-}
-
 my %cats_depag;
 eat_arr {
   local $_ = shift;
