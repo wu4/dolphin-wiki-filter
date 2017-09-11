@@ -30,14 +30,18 @@ my $filename = join('_', map {underscore s/ \(.*$//r} @cats) . '.html';
 
 sub linebreak (_) {"<span>$_[0]</span" =~ s|, |</span><span>|gr}
 
-sub eat_arr (&\@\@) {
-  my ($thread_code, $arr, $ret) = @_;
+sub intersection (@) { List::Compare->new(@_)->get_intersection }
+
+sub eat_arr (&@) {
+  my $thread_code = shift;
+  my $arr = (ref($_[0]) eq 'ARRAY') ? shift : \@_;
+  my @ret;
   my $arr_size = scalar @$arr;
   my $finished_count = 0;
   do {
     for (threads->list) {
       if ($_->is_joinable) {
-        push @$ret, [$_->join];
+        push @ret, [$_->join];
         print STDERR "\r\e[2K"
                    . (++$finished_count)
                    . '/'
@@ -51,58 +55,8 @@ sub eat_arr (&\@\@) {
     }
   } while (threads->list);
   print STDERR "\n";
+  return @ret;
 }
-
-my @cats_depag = do {
-  eat_arr {
-    my $cat = shift;
-    my $nextpage = "$URL/index.php?title=Category:" . underscore $cat;
-
-    my @pages;
-    while (defined $nextpage) {
-      my $content = Mojo::DOM->new(get $nextpage)->at('#mw-pages');
-
-      for ($content->find('.mw-category a')->each) {
-        push @pages, $_->attr->{href};
-      }
-
-      $nextpage = undef;
-      for ($content->find('a')->each) {
-        if ($_->text eq 'next page') {
-          $nextpage = $URL . $_->attr->{href};
-          last;
-        }
-      }
-    }
-
-    return @pages;
-  } @cats, my @ret;
-
-  List::Compare->new(@ret)->get_intersection;
-};
-
-eat_arr {
-  my $url = $URL . shift;
-  my $dom = Mojo::DOM->new(get $url);
-
-  my $title = $dom->at('#firstHeading')->text;
-
-  my ($platform, $genres, $modes, $inputs);
-  for ($dom->at('.infobox')->find('tr')->each) {
-    my ($type, $values) = $_->find('td')->each;
-    next unless defined $type;
-    next unless defined $type->at('a');
-
-    my $t = $type->at('a')->text;
-
-    if    ($t eq 'Platform(s)')   {$platform = linebreak $values->all_text}
-    elsif ($t eq 'Genre(s)')      {$genres   = linebreak $values->all_text}
-    elsif ($t eq 'Mode(s)')       {$modes    = linebreak $values->all_text}
-    elsif ($t eq 'Input methods') {$inputs   = linebreak $values->all_text}
-  }
-
-  return $title, $platform, $modes, $genres, $inputs, $url;
-} @cats_depag, my @games;
 
 my $html = HTML::TagTree->new('html');
 my $head = $html->head;
@@ -125,7 +79,54 @@ $thead_tr->th($_) for qw{Platform Mode(s) Genre(s) Input&nbsp;methods Game};
 
 my $tbody = $table->tbody;
 
-for (sort {$a->[0] cmp $b->[0]} @games) {
+for (
+  sort {
+    $a->[0] cmp $b->[0]
+  } eat_arr {
+    my $url = $URL . shift;
+    my $dom = Mojo::DOM->new(get $url);
+
+    my $title = $dom->at('#firstHeading')->text;
+
+    my ($platform, $genres, $modes, $inputs);
+    for ($dom->at('.infobox')->find('tr')->each) {
+      my ($type, $values) = $_->find('td')->each;
+      next unless defined $type;
+      next unless defined $type->at('a');
+
+      my $t = $type->at('a')->text;
+
+      if    ($t eq 'Platform(s)')   {$platform = linebreak $values->all_text}
+      elsif ($t eq 'Genre(s)')      {$genres   = linebreak $values->all_text}
+      elsif ($t eq 'Mode(s)')       {$modes    = linebreak $values->all_text}
+      elsif ($t eq 'Input methods') {$inputs   = linebreak $values->all_text}
+    }
+
+    return $title, $platform, $modes, $genres, $inputs, $url;
+  } intersection eat_arr {
+    my $cat = shift;
+    my $nextpage = "$URL/index.php?title=Category:" . underscore $cat;
+
+    my @pages;
+    while (defined $nextpage) {
+      my $content = Mojo::DOM->new(get $nextpage)->at('#mw-pages');
+
+      for ($content->find('.mw-category a')->each) {
+        push @pages, $_->attr->{href};
+      }
+
+      $nextpage = undef;
+      for ($content->find('a')->each) {
+        if ($_->text eq 'next page') {
+          $nextpage = $URL . $_->attr->{href};
+          last;
+        }
+      }
+    }
+
+    return @pages;
+  } @cats
+) {
   my ($title, $platform, $modes, $genres, $inputs, $url) = @$_;
   my $tr = $tbody->tr;
   eval '$tr->td($' . $_ . qq{,'class="$_"')} for qw{platform modes genres inputs};
