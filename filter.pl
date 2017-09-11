@@ -20,8 +20,9 @@ $URL = 'https://wiki.dolphin-emu.org';
 my @game_urls;
 
 my @cats = (
-  '4 (Players supported)',
-  # 'GameCube Controller (Input supported)',
+  # '4 (Players supported)',
+  '2 (Players supported)',
+  'GameCube Controller (Input supported)',
   'Co-op (Game mode)',
 );
 sub underscore ($) {$_[0] =~ s/\s/_/gr}
