@@ -9,6 +9,7 @@ use LWP::Protocol::https;
 use Mojo::DOM;
 use experimental 'smartmatch';
 use List::Compare;
+use HTML::TagTree;
 use utf8;
 binmode STDOUT, ":utf8";
 binmode STDERR, ":utf8";
@@ -20,10 +21,12 @@ my @game_urls;
 
 my @cats = (
   '4 (Players supported)',
-  'GameCube Controller (Input supported)',
-  # 'Co-op (Game mode)',
+  # 'GameCube Controller (Input supported)',
+  'Co-op (Game mode)',
 );
 sub underscore ($) {$_[0] =~ s/\s/_/gr}
+
+my $filename = join('_', map {underscore s/ \(.*$//r} @cats) . '.html';
 
 sub linebreak (_) {"<span>$_[0]</span" =~ s|, |</span><span>|gr}
 
@@ -98,49 +101,40 @@ eat_arr {
     elsif ($t eq 'Input methods') {$inputs   = linebreak $values->all_text}
   }
 
-  return $title, <<~"eoc"
-    <tr>
-      <td class="platform">$platform</td>
-      <td class="modes">$modes</td>
-      <td class="genres">$genres</td>
-      <td class="inputs">$inputs</td>
-      <td class="title"><a href="$url">$title</a></td>
-    </tr>
-  eoc
+  return $title, $platform, $modes, $genres, $inputs, $url;
 } @cats_depag, my @games;
 
-print <<~"eoh";
-<html><head>
-  <meta charset="utf8">
-  <script
-    type="text/javascript"
-    src="https://kryogenix.org/code/browser/sorttable/sorttable.js"></script>
-eoh
+my $html = HTML::TagTree->new('html');
+my $head = $html->head;
+my $body = $html->body;
+$head->meta('', 'charset="utf8"');
+$head->script('', 'type="text/javascript" src="https://kryogenix.org/code/browser/sorttable/sorttable.js"');
 
 if (defined($ARGV[0]) && $ARGV[0] eq '--embed-css') {
-  print qq{<style type="text/css">};
   open my $fh, '<', 'games.css';
   chomp(my @lines = <$fh>);
-  print join("\n", @lines);
+  $head->style(join("\n", @lines), 'type="text/css"');
   close $fh;
-  print qq{</style>};
 } else {
-  print qq{<link rel="stylesheet" type="text/css" href="games.css" />};
+  $head->link('', 'rel="stylesheet" type="text/css" href="games.css"');
 }
 
-print <<~"eoh";
-  </head>
-  <table class="sortable">
-    <thead>
-      <tr>
-        <th>Platform</th>
-        <th>Mode(s)</th>
-        <th>Genre(s)</th>
-        <th>Input methods</th>
-        <th>Game</th>
-      </tr>
-    </thead>
-    <tbody>
-eoh
-print join('', map {$_->[1]} sort {$a->[0] cmp $b->[0]} @games) . "\n";
-print "</tbody></table></html>\n";
+my $table = $body->table('', 'class="sortable"');
+my $thead_tr = $table->thead->tr;
+$thead_tr->th($_) for qw{Platform Mode(s) Genre(s) Input&nbsp;methods Game};
+
+my $tbody = $table->tbody;
+
+for (sort {$a->[0] cmp $b->[0]} @games) {
+  my ($title, $platform, $modes, $genres, $inputs, $url) = @$_;
+  my $tr = $tbody->tr;
+  eval '$tr->td($' . $_ . qq{,'class="$_"')} for qw{platform modes genres inputs};
+  $tr->td('', 'class="title"')->a($title, qq{href="$url"});
+}
+
+open my $fh, '>', $filename;
+binmode $fh, ":utf8";
+print $fh $html->get_html_text(0, 1);
+close $fh;
+
+print "Saved to $filename\n";
